@@ -1,6 +1,6 @@
 """
-execute.py 리팩터링 안전망 테스트.
-리팩터링 전후 동작이 동일한지 검증한다.
+Safety-net tests for the execute.py refactor.
+Verify that behavior is identical before and after refactoring.
 """
 
 import json
@@ -24,7 +24,7 @@ import execute as ex
 
 @pytest.fixture
 def tmp_project(tmp_path):
-    """phases/, CLAUDE.md, docs/ 를 갖춘 임시 프로젝트 구조."""
+    """Temporary project layout containing phases/, CLAUDE.md and docs/."""
     phases_dir = tmp_path / "phases"
     phases_dir.mkdir()
 
@@ -33,15 +33,15 @@ def tmp_project(tmp_path):
 
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
-    (docs_dir / "arch.md").write_text("# Architecture\nSome content")
-    (docs_dir / "guide.md").write_text("# Guide\nAnother doc")
+    (docs_dir / "ARCHITECTURE.md").write_text("# Architecture\nSome content")
+    (docs_dir / "PRD.md").write_text("# Product\nAnother doc")
 
     return tmp_path
 
 
 @pytest.fixture
 def phase_dir(tmp_project):
-    """step 3개를 가진 phase 디렉토리."""
+    """Phase directory with three steps."""
     d = tmp_project / "phases" / "0-mvp"
     d.mkdir()
 
@@ -49,13 +49,13 @@ def phase_dir(tmp_project):
         "project": "TestProject",
         "phase": "mvp",
         "steps": [
-            {"step": 0, "name": "setup", "status": "completed", "summary": "프로젝트 초기화 완료"},
-            {"step": 1, "name": "core", "status": "completed", "summary": "핵심 로직 구현"},
+            {"step": 0, "name": "setup", "status": "completed", "summary": "Project scaffolding done"},
+            {"step": 1, "name": "core", "status": "completed", "summary": "Core logic implemented"},
             {"step": 2, "name": "ui", "status": "pending"},
         ],
     }
     (d / "index.json").write_text(json.dumps(index, indent=2, ensure_ascii=False))
-    (d / "step2.md").write_text("# Step 2: UI\n\nUI를 구현하세요.")
+    (d / "step2.md").write_text("# Step 2: UI\n\nImplement the UI.")
 
     return d
 
@@ -76,10 +76,10 @@ def top_index(tmp_project):
 
 @pytest.fixture
 def executor(tmp_project, phase_dir):
-    """테스트용 StepExecutor 인스턴스. git 호출은 별도 mock 필요."""
+    """StepExecutor instance for tests. git calls must be mocked separately."""
     with patch.object(ex, "ROOT", tmp_project):
         inst = ex.StepExecutor("0-mvp")
-    # 내부 경로를 tmp_project 기준으로 재설정
+    # Re-point the internal paths at tmp_project
     inst._root = str(tmp_project)
     inst._phases_dir = tmp_project / "phases"
     inst._phase_dir = phase_dir
@@ -90,7 +90,7 @@ def executor(tmp_project, phase_dir):
 
 
 # ---------------------------------------------------------------------------
-# _stamp (= 이전 now_iso)
+# _stamp (formerly now_iso)
 # ---------------------------------------------------------------------------
 
 class TestStamp:
@@ -142,58 +142,6 @@ class TestJsonHelpers:
 
 
 # ---------------------------------------------------------------------------
-# _load_guardrails
-# ---------------------------------------------------------------------------
-
-class TestLoadGuardrails:
-    def test_loads_claude_md_and_docs(self, executor, tmp_project):
-        with patch.object(ex, "ROOT", tmp_project):
-            result = executor._load_guardrails()
-        assert "# Rules" in result
-        assert "rule one" in result
-        assert "# Architecture" in result
-        assert "# Guide" in result
-
-    def test_sections_separated_by_divider(self, executor, tmp_project):
-        with patch.object(ex, "ROOT", tmp_project):
-            result = executor._load_guardrails()
-        assert "---" in result
-
-    def test_docs_sorted_alphabetically(self, executor, tmp_project):
-        with patch.object(ex, "ROOT", tmp_project):
-            result = executor._load_guardrails()
-        arch_pos = result.index("arch")
-        guide_pos = result.index("guide")
-        assert arch_pos < guide_pos
-
-    def test_no_claude_md(self, executor, tmp_project):
-        (tmp_project / "CLAUDE.md").unlink()
-        with patch.object(ex, "ROOT", tmp_project):
-            result = executor._load_guardrails()
-        assert "CLAUDE.md" not in result
-        assert "Architecture" in result
-
-    def test_no_docs_dir(self, executor, tmp_project):
-        import shutil
-        shutil.rmtree(tmp_project / "docs")
-        with patch.object(ex, "ROOT", tmp_project):
-            result = executor._load_guardrails()
-        assert "Rules" in result
-        assert "Architecture" not in result
-
-    def test_empty_project(self, tmp_path):
-        with patch.object(ex, "ROOT", tmp_path):
-            # executor가 필요 없는 static-like 동작이므로 임시 인스턴스
-            phases_dir = tmp_path / "phases" / "dummy"
-            phases_dir.mkdir(parents=True)
-            idx = {"project": "T", "phase": "t", "steps": []}
-            (phases_dir / "index.json").write_text(json.dumps(idx))
-            inst = ex.StepExecutor.__new__(ex.StepExecutor)
-            result = inst._load_guardrails()
-        assert result == ""
-
-
-# ---------------------------------------------------------------------------
 # _build_step_context
 # ---------------------------------------------------------------------------
 
@@ -201,8 +149,8 @@ class TestBuildStepContext:
     def test_includes_completed_with_summary(self, phase_dir):
         index = json.loads((phase_dir / "index.json").read_text())
         result = ex.StepExecutor._build_step_context(index)
-        assert "Step 0 (setup): 프로젝트 초기화 완료" in result
-        assert "Step 1 (core): 핵심 로직 구현" in result
+        assert "Step 0 (setup): Project scaffolding done" in result
+        assert "Step 1 (core): Core logic implemented" in result
 
     def test_excludes_pending(self, phase_dir):
         index = json.loads((phase_dir / "index.json").read_text())
@@ -224,7 +172,7 @@ class TestBuildStepContext:
     def test_has_header(self, phase_dir):
         index = json.loads((phase_dir / "index.json").read_text())
         result = ex.StepExecutor._build_step_context(index)
-        assert result.startswith("## 이전 Step 산출물")
+        assert result.startswith("## Previous Step Output")
 
 
 # ---------------------------------------------------------------------------
@@ -233,42 +181,38 @@ class TestBuildStepContext:
 
 class TestBuildPreamble:
     def test_includes_project_name(self, executor):
-        result = executor._build_preamble("", "")
+        result = executor._build_preamble("")
         assert "TestProject" in result
 
-    def test_includes_guardrails(self, executor):
-        result = executor._build_preamble("GUARD_CONTENT", "")
-        assert "GUARD_CONTENT" in result
-
     def test_includes_step_context(self, executor):
-        ctx = "## 이전 Step 산출물\n\n- Step 0: done"
-        result = executor._build_preamble("", ctx)
-        assert "이전 Step 산출물" in result
+        ctx = "## Previous Step Output\n\n- Step 0: done"
+        result = executor._build_preamble(ctx)
+        assert "Previous Step Output" in result
 
     def test_includes_commit_example(self, executor):
-        result = executor._build_preamble("", "")
+        result = executor._build_preamble("")
         assert "feat(mvp):" in result
 
     def test_includes_rules(self, executor):
-        result = executor._build_preamble("", "")
-        assert "작업 규칙" in result
+        result = executor._build_preamble("")
+        assert "Working Rules" in result
         assert "AC" in result
 
     def test_no_retry_section_by_default(self, executor):
-        result = executor._build_preamble("", "")
-        assert "이전 시도 실패" not in result
+        result = executor._build_preamble("")
+        assert "Previous attempt failed" not in result
 
     def test_retry_section_with_prev_error(self, executor):
-        result = executor._build_preamble("", "", prev_error="타입 에러 발생")
-        assert "이전 시도 실패" in result
-        assert "타입 에러 발생" in result
+        result = executor._build_preamble("", prev_error="TypeError raised")
+        assert "Previous attempt failed" in result
+        assert "TypeError raised" in result
 
     def test_includes_max_retries(self, executor):
-        result = executor._build_preamble("", "")
+        result = executor._build_preamble("")
         assert str(ex.StepExecutor.MAX_RETRIES) in result
 
     def test_includes_index_path(self, executor):
-        result = executor._build_preamble("", "")
+        result = executor._build_preamble("")
         assert "/phases/0-mvp/index.json" in result
 
 
@@ -399,6 +343,40 @@ class TestCommitStep:
         assert "feat(mvp):" in commit_calls[0][2]
         assert "chore(mvp):" in commit_calls[1][2]
 
+    def test_retry_exhaustion_commits_no_implementation(self, executor, tmp_project):
+        """A step that never reached `completed` gets its failure record committed, and nothing
+        else: a `feat(...)` commit of the failed attempt read in the log like a step that landed,
+        and a timeout-killed attempt never committed that code itself. Real git, in tmp_path; no
+        session is spawned (`_invoke_codex` is a fake that leaves broken code behind)."""
+        def git(*args):
+            return subprocess.run(["git", *args], cwd=tmp_project, check=True,
+                                  capture_output=True, text=True).stdout
+
+        git("init", "-q", ".")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        git("add", "-A")
+        git("commit", "-qm", "baseline")
+        broken = tmp_project / "lib" / "broken.ts"
+
+        def failing_session(step, preamble):
+            broken.parent.mkdir(exist_ok=True)
+            broken.write_text("export const answer: number = 'not a number';\n")
+            return {"step": step["step"], "name": step["name"], "exitCode": 1, "stdout": "", "stderr": ""}
+
+        with patch.object(executor, "_invoke_codex", side_effect=failing_session), \
+             patch.object(executor, "_update_top_index"):
+            with pytest.raises(SystemExit) as exc:
+                executor._execute_single_step({"step": 2, "name": "ui"})
+        assert exc.value.code == 1
+
+        subjects = git("log", "--format=%s").splitlines()
+        committed = git("log", "--format=", "--name-only").split()
+        assert not any(s.startswith("feat(") for s in subjects), subjects
+        assert "lib/broken.ts" not in committed, (subjects, committed)
+        assert "phases/0-mvp/index.json" in committed, committed
+        assert broken.exists()          # left in the working tree for the operator
+
     def test_no_code_changes_skips_feat_commit(self, executor):
         call_count = {"diff": 0}
         calls = []
@@ -439,7 +417,7 @@ class TestInvokeCodex:
         assert "--dangerously-bypass-hook-trust" in cmd
         assert "--json" in cmd
         assert "PREAMBLE" in cmd[-1]
-        assert "UI를 구현하세요" in cmd[-1]
+        assert "Implement the UI." in cmd[-1]
 
     def test_saves_output_json(self, executor):
         mock_result = MagicMock(returncode=0, stdout='{"ok": true}', stderr="")
@@ -470,9 +448,26 @@ class TestInvokeCodex:
 
         assert mock_run.call_args[1]["timeout"] == 1800
 
+    def test_stdin_is_devnull(self, executor):
+        """The child must not inherit our stdin, or a non-interactive run hangs.
+
+        `codex exec` treats an open non-TTY stdin as additional prompt input
+        ("Reading additional input from stdin...") and blocks on it forever.
+        `capture_output=True` redirects stdout/stderr only, so without an explicit
+        stdin every run launched without a TTY — CI, a pipe, an agent shell — burns
+        the whole `timeout_s` (1800s by default) and the step fails with no output.
+        """
+        mock_result = MagicMock(returncode=0, stdout="{}", stderr="")
+        step = {"step": 2, "name": "ui"}
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            executor._invoke_codex(step, "preamble")
+
+        assert mock_run.call_args[1]["stdin"] is subprocess.DEVNULL
+
 
 # ---------------------------------------------------------------------------
-# progress_indicator (= 이전 Spinner)
+# progress_indicator (formerly Spinner)
 # ---------------------------------------------------------------------------
 
 class TestProgressIndicator:
@@ -489,8 +484,86 @@ class TestProgressIndicator:
         assert pi.elapsed > 0
 
 
+class TestNoGuardrailInjection:
+    def test_prompt_carries_no_claude_md_or_docs(self, executor, tmp_project):
+        """Codex reads AGENTS.md (a symlink to CLAUDE.md) as its project doc and opens the docs
+        it needs from there; the runner must not paste CLAUDE.md or docs/*.md into the prompt."""
+        executor._checkout_branch = lambda: None
+        executor._run_git = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+        prompts = []
+
+        def succeed(step, preamble):
+            prompts.append(preamble)
+            index = json.loads(executor._index_file.read_text())
+            for s in index["steps"]:
+                if s["step"] == step["step"]:
+                    s["status"] = "completed"
+                    s["summary"] = "done"
+            executor._index_file.write_text(json.dumps(index))
+            return {"step": step["step"], "name": step["name"], "exitCode": 0, "stdout": "", "stderr": ""}
+
+        with patch.object(ex, "ROOT", tmp_project), \
+             patch.object(executor, "_invoke_codex", side_effect=succeed):
+            executor.run()
+
+        assert len(prompts) == 1
+        assert "TestProject" in prompts[0]
+        for injected in ("rule one", "# Architecture", "Some content", "Another doc"):
+            assert injected not in prompts[0]
+
+
+class TestRerunAfterFailure:
+    def test_a_failed_rerun_does_not_finalize_the_phase(self, executor, top_index):
+        """Reopen step 0 after steps 1-2 completed, let it fail three times, and invoke the
+        executor again: it must stop on the error, not finalize the phase over it."""
+        executor._checkout_branch = lambda: None
+        executor._run_git = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+        index = json.loads(executor._index_file.read_text())
+        for step, status in zip(index["steps"], ["pending", "completed", "completed"]):
+            step["status"] = status
+        executor._index_file.write_text(json.dumps(index))
+
+        def failing(step, preamble):
+            return {"step": step["step"], "name": step["name"], "exitCode": 1, "stdout": "", "stderr": ""}
+
+        with patch.object(executor, "_invoke_codex", side_effect=failing):
+            with pytest.raises(SystemExit) as first:
+                executor.run()
+        assert first.value.code == 1
+
+        with patch.object(executor, "_invoke_codex", side_effect=AssertionError("nothing to run")):
+            with pytest.raises(SystemExit) as second:
+                executor.run()
+        assert second.value.code == 1
+        index = json.loads(executor._index_file.read_text())
+        phase = next(p for p in json.loads(top_index.read_text())["phases"] if p["dir"] == "0-mvp")
+        assert "completed_at" not in index
+        assert phase["status"] == "error"
+
+
+class TestStepDuration:
+    def test_the_step_line_reports_the_real_duration(self, executor, capsys):
+        """`pi.elapsed` is set when the progress context exits; read inside it, every line said 0s."""
+        import time
+
+        def slow_success(step, preamble):
+            time.sleep(1.2)
+            index = json.loads(executor._index_file.read_text())
+            for s in index["steps"]:
+                if s["step"] == step["step"]:
+                    s["status"] = "completed"
+                    s["summary"] = "done"
+            executor._index_file.write_text(json.dumps(index))
+            return {"step": step["step"], "name": step["name"], "exitCode": 0, "stdout": "", "stderr": ""}
+
+        with patch.object(executor, "_invoke_codex", side_effect=slow_success), \
+             patch.object(executor, "_commit_step"):
+            assert executor._execute_single_step({"step": 2, "name": "ui"}) is True
+        assert "✓ Step 2: ui [1s]" in capsys.readouterr().out
+
+
 # ---------------------------------------------------------------------------
-# main() CLI 파싱 (mocked)
+# main() CLI parsing (mocked)
 # ---------------------------------------------------------------------------
 
 class TestMainCli:
@@ -517,7 +590,7 @@ class TestMainCli:
 
 
 # ---------------------------------------------------------------------------
-# _check_blockers (= 이전 main() error/blocked 체크)
+# _check_blockers (formerly the main() error/blocked check)
 # ---------------------------------------------------------------------------
 
 class TestCheckBlockers:
@@ -549,6 +622,20 @@ class TestCheckBlockers:
             inst._check_blockers()
         assert exc_info.value.code == 1
 
+    @pytest.mark.parametrize("statuses", [
+        ["error", "completed"],                  # a reopened step that failed again
+        ["completed", "error", "completed"],
+        ["in_progress", "completed"],            # a status this executor never writes
+    ])
+    def test_a_blocker_behind_a_completed_step_still_stops(self, tmp_project, statuses):
+        """The reverse scan stopped at the first non-pending step from the end, so a trailing
+        `completed` hid an earlier error and `_finalize` marked the phase completed over it."""
+        steps = [{"step": i, "name": f"s{i}", "status": st} for i, st in enumerate(statuses)]
+        inst = self._make_executor_with_steps(tmp_project, steps)
+        with pytest.raises(SystemExit) as exc_info:
+            inst._check_blockers()
+        assert exc_info.value.code == 1
+
     def test_blocked_step_exits_2(self, tmp_project):
         steps = [
             {"step": 0, "name": "ok", "status": "completed"},
@@ -558,3 +645,198 @@ class TestCheckBlockers:
         with pytest.raises(SystemExit) as exc_info:
             inst._check_blockers()
         assert exc_info.value.code == 2
+
+
+class TestStatus:
+    """--status: read-only progress snapshot (no git repo, no execution)."""
+
+    def test_status_prints_table_and_rollup(self, executor, capsys):
+        executor.status()
+        out = capsys.readouterr().out
+        # step names and the per-status roll-up appear; nothing executes.
+        assert "setup" in out and "core" in out and "ui" in out
+        assert "2 completed" in out and "1 pending" in out
+        assert "3 steps" in out
+        # tmp_project is not a git repo, so the branch is reported as absent.
+        assert "not created yet" in out
+
+    def test_fmt_elapsed_units(self, executor):
+        from datetime import timedelta
+        now = datetime.now(ex.StepExecutor.TZ)
+        assert executor._fmt_elapsed((now - timedelta(seconds=30)).isoformat()).endswith("s")
+        assert executor._fmt_elapsed((now - timedelta(minutes=5)).isoformat()).endswith("m")
+        assert "h" in executor._fmt_elapsed((now - timedelta(hours=2)).isoformat())
+        assert executor._fmt_elapsed("not-a-date") == "?"
+
+
+class TestLiveness:
+    """--status must answer "is the background run still alive?" itself, so the
+    manual pgrep/ps that kept getting bolted onto it is no longer needed."""
+
+    LINES = [
+        "1001 python3 scripts/execute.py 0-mvp",
+        "1002 python3 scripts/execute.py 0-mvp --push",
+        "1003 python3 scripts/execute.py 0-mvp --status",   # a status call, not a run
+        "1004 python3 scripts/execute.py 1-polish",         # a different phase
+        "1005 vim scripts/execute.py 0-mvp",                # not an interpreter run
+    ]
+
+    def test_finds_real_runs_of_this_phase(self):
+        pids = ex.StepExecutor._live_run_pids(self.LINES, "0-mvp", own_pid=9999)
+        assert pids == [1001, 1002]
+
+    def test_excludes_own_status_process(self):
+        pids = ex.StepExecutor._live_run_pids(self.LINES, "0-mvp", own_pid=1001)
+        assert 1001 not in pids
+
+    def test_other_phase_not_reported(self):
+        assert ex.StepExecutor._live_run_pids(self.LINES, "1-polish", own_pid=9999) == [1004]
+
+    def test_no_matches(self):
+        assert ex.StepExecutor._live_run_pids(self.LINES, "2-ship", own_pid=9999) == []
+
+    def test_tolerates_garbage_lines(self):
+        assert ex.StepExecutor._live_run_pids(["", "notapid foo", "  "], "0-mvp", 1) == []
+
+    def test_status_reports_liveness_line(self, executor, capsys):
+        with patch.object(ex.StepExecutor, "_live_run_pids", return_value=[4242]):
+            executor.status()
+        out = capsys.readouterr().out
+        assert "4242" in out and "running" in out.lower()
+
+    def test_status_reports_not_running(self, executor, capsys):
+        with patch.object(ex.StepExecutor, "_live_run_pids", return_value=[]):
+            executor.status()
+        assert "not running" in capsys.readouterr().out.lower()
+
+
+class TestSummary:
+    """--summary: read a completed step's summary in full, untruncated.
+
+    The --status table shows a summary cut to the first 60 characters of its first line —
+    so reading what a step actually produced meant parsing index.json by hand. This path
+    prints the whole text.
+    """
+
+    LONG = (
+        "First line — on its own this one line already runs well past the 60-character truncation --status applies.\n"
+        "Second line: the evidence and the measurements.\n"
+        "Third line: what is left."
+    )
+
+    def _make_summary_long(self, executor):
+        idx = json.loads(executor._index_file.read_text())
+        idx["steps"][1]["summary"] = self.LONG
+        executor._index_file.write_text(json.dumps(idx, indent=2, ensure_ascii=False))
+
+    def test_no_arg_prints_every_completed_step(self, executor, capsys):
+        executor.summary()
+        out = capsys.readouterr().out
+        assert "Project scaffolding done" in out
+        assert "Core logic implemented" in out
+        assert "ui" not in out  # a pending step is left out
+
+    def test_name_selects_one_step(self, executor, capsys):
+        executor.summary("core")
+        out = capsys.readouterr().out
+        assert "Core logic implemented" in out
+        assert "Project scaffolding done" not in out
+
+    def test_index_selects_one_step(self, executor, capsys):
+        executor.summary("0")
+        out = capsys.readouterr().out
+        assert "Project scaffolding done" in out
+        assert "Core logic implemented" not in out
+
+    def test_multiline_summary_is_not_truncated(self, executor, capsys):
+        """The core regression test: no 60-character cut, no first-line-only printing."""
+        self._make_summary_long(executor)
+        executor.summary("core")
+        out = capsys.readouterr().out
+        for line in self.LONG.splitlines():
+            assert line in out
+
+    def test_status_table_still_truncates(self, executor, capsys):
+        """--summary is a new path — the one-line --status table is left as it is."""
+        self._make_summary_long(executor)
+        executor.status()
+        out = capsys.readouterr().out
+        assert "Second line: the evidence and the measurements." not in out
+
+    def test_unknown_step_errors(self, executor, capsys):
+        with pytest.raises(SystemExit) as exc_info:
+            executor.summary("no-such-step")
+        assert exc_info.value.code == 1
+        out = capsys.readouterr().out
+        assert "no-such-step" in out
+        assert "core" in out  # it tells you which steps exist
+
+    def test_cli_flag_without_value(self, tmp_project, phase_dir, capsys):
+        with patch("sys.argv", ["execute.py", "0-mvp", "--summary"]):
+            with patch.object(ex, "ROOT", tmp_project):
+                ex.main()
+        assert "Core logic implemented" in capsys.readouterr().out
+
+    def test_cli_flag_with_step_selector(self, tmp_project, phase_dir, capsys):
+        with patch("sys.argv", ["execute.py", "0-mvp", "--summary", "core"]):
+            with patch.object(ex, "ROOT", tmp_project):
+                ex.main()
+        out = capsys.readouterr().out
+        assert "Core logic implemented" in out
+        assert "Project scaffolding done" not in out
+
+
+# ---------------------------------------------------------------------------
+# Codex step timeout -> ordinary step failure (not a traceback)
+# ---------------------------------------------------------------------------
+
+class TestCodexTimeout:
+    def test_invoke_codex_does_not_raise_on_timeout(self, executor):
+        step = {"step": 2, "name": "ui", "timeout_s": 90}
+        boom = subprocess.TimeoutExpired(cmd=["codex", "exec"], timeout=90)
+
+        with patch("subprocess.run", side_effect=boom):
+            output = executor._invoke_codex(step, "preamble")
+
+        assert "90" in output["timeoutMessage"]
+        assert "uncommitted" in output["timeoutMessage"]
+        data = json.loads((executor._phase_dir / "step2-output.json").read_text())
+        assert data["step"] == 2
+
+    def test_timeout_message_is_fed_back_to_the_retry(self, executor):
+        step = {"step": 2, "name": "ui", "timeout_s": 90}
+        boom = subprocess.TimeoutExpired(cmd=["codex", "exec"], timeout=90)
+        preambles = []
+
+        def fake_invoke(s, preamble):
+            preambles.append(preamble)
+            with patch("subprocess.run", side_effect=boom):
+                return ex.StepExecutor._invoke_codex(executor, s, preamble)
+
+        with patch.object(executor, "_invoke_codex", side_effect=fake_invoke), \
+             patch.object(executor, "_commit_step"), \
+             patch.object(executor, "_update_top_index"):
+            with pytest.raises(SystemExit) as exc_info:
+                executor._execute_single_step(step)
+
+        assert exc_info.value.code == 1
+        assert len(preambles) == executor.MAX_RETRIES
+        assert "90" in preambles[1]
+        assert "Previous attempt failed" in preambles[1]
+
+    def test_timeout_ends_as_error_with_failed_at(self, executor):
+        step = {"step": 2, "name": "ui", "timeout_s": 90}
+        boom = subprocess.TimeoutExpired(cmd=["codex", "exec"], timeout=90)
+
+        with patch("subprocess.run", side_effect=boom), \
+             patch.object(executor, "_commit_step"), \
+             patch.object(executor, "_update_top_index"):
+            with pytest.raises(SystemExit) as exc_info:
+                executor._execute_single_step(step)
+
+        assert exc_info.value.code == 1
+        index = json.loads(executor._index_file.read_text())
+        s2 = next(s for s in index["steps"] if s["step"] == 2)
+        assert s2["status"] == "error"
+        assert "failed_at" in s2
+        assert "90" in s2["error_message"]
