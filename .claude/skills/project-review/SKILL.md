@@ -1,3 +1,9 @@
+---
+description: 이 프로젝트의 변경 사항을 아키텍처·기술 스택·테스트·CRITICAL 규칙·빌드 기준으로 리뷰한다. GitHub PR용 내장 `/review`가 아니라 지금 작업 중인 diff를 본다.
+argument-hint: "[리뷰 범위 (비우면 현재 변경 전체)]"
+allowed-tools: Bash, Read, Grep, Glob
+---
+
 이 프로젝트의 변경 사항을 리뷰하라.
 
 먼저 다음 문서들을 읽어라:

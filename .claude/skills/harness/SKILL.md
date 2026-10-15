@@ -1,3 +1,9 @@
+---
+description: phases/ 아래 step을 설계·생성하고 scripts/execute.py로 순서대로 실행하는 Harness 워크플로우의 진입점. 진행 상황 보고만 필요하면 /harness-status를 쓴다.
+argument-hint: "[task-name — 비우면 새 task 설계부터 시작]"
+allowed-tools: Bash, Read, Grep, Glob, Edit, Write, Agent
+---
+
 이 프로젝트는 Harness 프레임워크를 사용한다. 아래 워크플로우에 따라 작업을 진행하라.
 
 ---
@@ -86,49 +92,7 @@
 
 #### D-3. `phases/{task-name}/step{N}.md` (각 step마다 1개)
 
-```markdown
-# Step {N}: {이름}
-
-## 읽어야 할 파일
-
-먼저 아래 파일들을 읽고 프로젝트의 아키텍처와 설계 의도를 파악하라:
-
-- `/docs/ARCHITECTURE.md`
-- `/docs/ADR.md`
-- {이전 step에서 생성/수정된 파일 경로}
-
-이전 step에서 만들어진 코드를 꼼꼼히 읽고, 설계 의도를 이해한 뒤 작업하라.
-
-## 작업
-
-{구체적인 구현 지시. 파일 경로, 클래스/함수 시그니처, 로직 설명을 포함.
-코드 스니펫은 인터페이스/시그니처 수준만 제시하고, 구현체는 에이전트에게 맡겨라.
-단, 설계 의도에서 벗어나면 안 되는 핵심 규칙은 명확히 박아넣어라.}
-
-## Acceptance Criteria
-
-```bash
-npm run build   # 컴파일 에러 없음
-npm test        # 테스트 통과
-```
-
-## 검증 절차
-
-1. 위 AC 커맨드를 실행한다.
-2. 아키텍처 체크리스트를 확인한다:
-   - ARCHITECTURE.md 디렉토리 구조를 따르는가?
-   - ADR 기술 스택을 벗어나지 않았는가?
-   - CLAUDE.md CRITICAL 규칙을 위반하지 않았는가?
-3. 결과에 따라 `phases/{task-name}/index.json`의 해당 step을 업데이트한다:
-   - 성공 → `"status": "completed"`, `"summary": "산출물 한 줄 요약"`
-   - 수정 3회 시도 후에도 실패 → `"status": "error"`, `"error_message": "구체적 에러 내용"`
-   - 사용자 개입 필요 (API 키, 외부 인증, 수동 설정 등) → `"status": "blocked"`, `"blocked_reason": "구체적 사유"` 후 즉시 중단
-
-## 금지사항
-
-- {이 step에서 하지 말아야 할 것. "X를 하지 마라. 이유: Y" 형식}
-- 기존 테스트를 깨뜨리지 마라
-```
+정식 템플릿은 [`references/step-template.md`](references/step-template.md)에 있다 — step 파일을 만들 때 이 파일을 읽고 그 골격을 그대로 따른다.
 
 ### E. 실행
 
@@ -140,7 +104,7 @@ python3 scripts/execute.py {task-name} --push  # 실행 후 push
 execute.py가 자동으로 처리하는 것:
 
 - step 실행 — 각 step을 `codex exec`(비대화형)로 실행. 구현·AC 검증·커밋은 Codex 세션이 수행한다.
-- 가드레일 전달 — **러너는 `CLAUDE.md`나 `docs/` 문서를 프롬프트에 주입하지 않는다.** step 파일 앞에는 역할 소개 한 줄, 완료된 step의 summary, 재시도 시 이전 에러, 작업 규칙만 붙인다. step 프롬프트에는 작업 규칙, 완료된 step의 summary, step 파일만 들어간다. Codex는 `AGENTS.md` 심볼릭 링크를 통해 `CLAUDE.md`를 프로젝트 문서로 읽고, 거기 적힌 링크를 따라 필요한 문서를 직접 연다. 영역 규칙(`.claude/rules/*.md`)은 `.codex/hooks/rules-context.py`가 해당 파일을 읽거나 수정할 때 주입한다. step에 특화된 파일은 step 파일의 "읽어야 할 파일" 섹션에 적는다.
+- 가드레일 전달 — **러너는 `CLAUDE.md`나 `docs/` 문서를 프롬프트에 주입하지 않는다.** step 프롬프트는 역할 소개 한 줄, 완료된 step의 summary, 재시도 시 이전 에러, 작업 규칙, 그리고 step 파일로만 이루어진다. Codex는 `AGENTS.md` 심볼릭 링크를 통해 `CLAUDE.md`를 프로젝트 문서로 읽고, 거기 적힌 링크를 따라 필요한 문서를 직접 연다. 영역 규칙(`.claude/rules/*.md`)은 `.codex/hooks/rules-context.py`가 해당 파일을 읽거나 수정할 때 주입한다. step에 특화된 파일은 step 파일의 "읽어야 할 파일" 섹션에 적는다.
 - Codex 훅 — `.codex/hooks.json`이 매 step의 Codex 세션에 가드레일을 건다: 테스트 없는 구현 차단(TDD), 위험 명령 차단, 종료 시 lint/build/test 검증. execute.py는 `--dangerously-bypass-hook-trust`로 in-repo 훅을 신뢰한다.
 - `feat-{task-name}` 브랜치 생성/checkout
 - 컨텍스트 누적 — 완료된 step의 summary를 다음 step 프롬프트에 전달
@@ -151,8 +115,9 @@ execute.py가 자동으로 처리하는 것:
 진행 상황 확인 (백그라운드 실행 중):
 
 - execute.py는 `run_in_background`로 실행한다. 완료되면 **자동으로 알림이 오므로** `until grep … sleep 5; done` 같은 짧은 주기의 폴링 루프를 만들지 마라. 폴링 루프는 좀비 프로세스를 남기고 컨텍스트를 낭비한다.
-- 중간 진행 상황은 읽기 전용 스냅샷으로 본다: `python3 scripts/execute.py <task> --status` (step별 상태 표, 실행 중 여부, `feat-<task>` 커밋 수, 요약).
+- 중간 진행 상황은 읽기 전용 스냅샷으로 본다: `python3 scripts/execute.py <task> --status` (step별 상태 표, 실행 중 여부, `feat-<task>` 커밋 수, 요약). 이를 감싼 `/harness-status` skill이 있다.
 - 이 표는 각 step의 summary를 앞 60자로 자른다. 완료된 step이 남긴 내용 전체가 필요하면 `index.json`을 직접 파싱하지 말고 `python3 scripts/execute.py <task> --summary [step|N]`을 쓴다 (선택자는 표에 나온 0부터 시작하는 step 번호나 step 이름, 생략하면 완료된 step 전부).
+- "N분마다 알려줘"가 필요하면 같은 지시를 반복 입력하지 말고 `/loop`으로 맡긴다: `/loop 3m /harness-status <task>`.
 
 에러 복구:
 
