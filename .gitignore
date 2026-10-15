@@ -4,13 +4,18 @@ out/
 next-env.d.ts
 tsconfig.tsbuildinfo
 
+# local env files (secrets)
+.env*.local
+
 # phase execution outputs
 phases/**/phase*-output.json
 phases/**/step*-output.json
 
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json
+.claude/worktrees/
 
 # Python build artifacts
 __pycache__/
 *.pyc
+.pytest_cache/
