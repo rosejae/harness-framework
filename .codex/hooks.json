@@ -16,8 +16,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$(git rev-parse --show-toplevel)/.codex/hooks/block-dangerous.sh\"",
+            "command": "bash \"$(git rev-parse --show-toplevel)/scripts/hooks/block-dangerous.sh\"",
             "statusMessage": "위험 명령어 확인 중"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/rules-context.py\"",
+            "timeout": 5,
+            "statusMessage": "영역 규칙 주입 중",
+            "additionalContextLimit": 32768
           }
         ]
       }
@@ -27,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$(git rev-parse --show-toplevel)/.codex/hooks/validate.sh\"",
+            "command": "bash \"$(git rev-parse --show-toplevel)/scripts/hooks/validate.sh\"",
             "timeout": 600,
             "statusMessage": "lint·build·test 검증 중"
           }
