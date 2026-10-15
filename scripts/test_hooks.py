@@ -28,7 +28,12 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 BLOCK_HOOK = ROOT / "scripts" / "hooks" / "block-dangerous.sh"
+POLL_HOOK = ROOT / "scripts" / "hooks" / "block-poll-loop.sh"
 VALIDATE_HOOK = ROOT / "scripts" / "hooks" / "validate.sh"
+TDD_HOOKS = [
+    ROOT / "scripts" / "hooks" / "tdd-guard.sh",
+    ROOT / ".codex" / "hooks" / "tdd-guard.sh",
+]
 RULES_HOOK = ROOT / ".codex" / "hooks" / "rules-context.py"
 RULES_MATCH = ROOT / "scripts" / "rules_match.py"
 CLAUDE_SETTINGS = ROOT / ".claude" / "settings.json"
@@ -47,8 +52,27 @@ def run_hook(hook, payload, env=None, cwd=ROOT):
     )
 
 
+def run_hook_bounded(hook, payload, seconds):
+    """run_hook with a deadline that fails the test instead of hanging it. The hook runs in a
+    session of its own and the whole group is killed at the deadline: killing the hook alone
+    leaves its `$(…)` subshells running as orphans, still burning the CPU after the test."""
+    with subprocess.Popen([str(hook)], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True, start_new_session=True) as proc:
+        try:
+            out, err = proc.communicate(json.dumps(payload), timeout=seconds)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, 9)
+            proc.communicate()
+            pytest.fail(f"{hook.name} took over {seconds} s")
+    return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
+
+
 def bash_payload(command):
     return {"tool_name": "Bash", "tool_input": {"command": command}}
+
+
+def edit_payload(file_path):
+    return {"tool_name": "Write", "tool_input": {"file_path": file_path}}
 
 
 def decision(proc):
@@ -249,6 +273,342 @@ def test_a_lone_cat_heredoc_is_text_not_a_command():
     assert not denied(run_hook(BLOCK_HOOK, bash_payload(command)))
 
 
+# --- block-poll-loop.sh ---------------------------------------------------
+# Polling is waste, not destruction, so it gets its own hook and its own reason text
+# (background work already notifies on completion — /harness §E). A long
+# `sleep` and a one-line `until`/`while … sleep` loop are the two spellings that leak
+# zombie processes and context; a short sleep between retries stays legal.
+#
+# The three shapes below the first two lines were measured leaking through: a unit
+# suffix carries a long wait in a small number, a `while pgrep` watch spins with no
+# `sleep` to catch at all, and a loop written across several lines hides the keyword
+# and the delay from a line-by-line grep. Each one is a real command out of the
+# reference harness's transcripts, not an invented spelling.
+
+BLOCKED_POLL_COMMANDS = [
+    "sleep 60",
+    "until false; do sleep 5; done",
+    "while true; do sleep 10; done",
+    # ① unit suffix: two minutes is four times over the line, written in one digit
+    "sleep 2m",
+    "sleep 1h",
+    # ② a process watch is the loop condition — there is no delay call to match on
+    'while pgrep -f run_tests.py >/dev/null; do :; done',
+    'until ! pgrep -f nest_sweep >/dev/null 2>&1; do :; done',
+    # ③ the keyword and the delay live on different lines of one command string
+    'cd /srv/repo\nwhile true; do\n  echo waiting\n  sleep 20\ndone',
+    # ④ the prose exemption below must never become the way through. Each of these carries
+    #    an exempt carrier AND a live loop: only the carrier's own span is dropped, so the
+    #    loop beside it — or the one handed to an owner that RUNS its argument — still lands.
+    "git commit -m 'docs: ban polling' && until [ -f out/report.json ]; do sleep 20; done",
+    "grep -c 'poll' scripts/hooks/ ; bash -c 'while true; do sleep 60; done'",
+    "git commit -F - <<'MSG'\ndocs: the guard denies `while pgrep …` now\nMSG\nuntil pgrep -f build_layout; do sleep 30; done",
+    # a heredoc into a FILE is deliberately not exempt: the file can be run by a later call
+    "cat > /tmp/poll.sh <<'EOF'\nwhile true; do sleep 60; done\nEOF",
+    # a double-quoted span with a substitution in it is not inert text — it executes
+    'git commit -m "$(until true; do sleep 60; done)"',
+    # quote removal: the shell strips quotes before it runs a word
+    'sleep "60"',
+    "sleep '60'",
+    'until [ -f out/report.json ]; do "sleep" 1; done',
+    # ⑥'s quoted heredoc is inert only at its own shell level: inside a double quote that is
+    #   still open, the OUTER shell expands the body's substitution first
+    "bash -c \" grep <<'MSG'\n$(sleep 60)\nMSG\"",
+    "bash -c \" grep <<'MSG'\n$(sleep 60)\nMSG\n\"",
+    "echo \" grep <<'MSG'\n$(sleep 60)\nMSG\n\"",
+    # ⑦ an empty body busy-waits on its condition — a file watch spins like a process watch
+    "until [ -f out/report.json ]; do :; done",
+    "while [ ! -f out/report.json ]; do true; done",
+    "until test -s out/x/report.json; do :; done; cat out/x/report.json",
+    "until [ -f out/report.json ]\ndo\n  :\ndone",
+    # ⑦'s read-drain exception covers only a `while read` that consumes its input. Each of these
+    # spins at EOF instead — or carries a delay, which ③ judges on the loop as written.
+    "until read -r x; do :; done",
+    "while ! read -r x; do :; done",
+    "while read -r x < out/list.txt; do :; done",      # the read reopens the file every pass
+    "while read -r _; do sleep 5; done",
+    "ls | while read -r _; do :; done; until [ -f out/report.json ]; do :; done",
+    "ls | while read -r _\ndo\n  :\ndone\nuntil [ -f out/report.json ]\ndo\n  :\ndone",
+    # rg's --pre runs its argument, so rg owns no inert text once it carries one
+    "rg --pre 'sh -c \"while true; do sleep 60; done\"' x f",
+    "rg -n x f --pre='sh -c \"while true; do sleep 60; done\"'",
+    # a heredoc into `cat` is text only while nothing can run what cat prints
+    "cat <<'EOF' | bash\nwhile true; do sleep 60; done\nEOF",
+    "bash -c \"$(cat <<'EOF'\nwhile true; do sleep 60; done\nEOF\n)\"",
+    "{ cat <<'EOF'\nwhile true; do sleep 60; done\nEOF\n} | bash",
+    "cat <<'EOF' \\\n| bash\nwhile true; do sleep 60; done\nEOF",
+    "cat -v>/tmp/p.sh <<'EOF'\nwhile true; do sleep 60; done\nEOF",   # cat's flags are option letters
+    "cat -n;bash <<'EOF'\nwhile true; do sleep 60; done\nEOF",       # …or bash owns the heredoc
+    # an opener line continued by `\` is still the command: the next line runs, the body follows
+    "git commit -F - <<'MSG' \\\n&& bash -c 'while true; do sleep 60; done'\nfix: x\nMSG",
+    "git commit -F - <<'MSG' \\\n&& until [ -f out/report.json ]; do :; done\nfix: x\nMSG",
+    # grep/rg print what they match, so a pipe after them can hand the body to a shell
+    "grep -e. <<'EOF' | bash\nwhile true; do sleep 60; done\nEOF",
+    "{ grep -e. <<'EOF'\nwhile true; do sleep 60; done\nEOF\n} | bash",
+    "rg -N . <<'EOF' | sh\nuntil [ -f out/report.json ]; do :; done\nEOF",
+    # <<- ends the body at a tab-indented delimiter, before the first exact one
+    "cat <<-'EOF'\nx\n\tEOF\nwhile true; do sleep 60; done\nEOF",
+    "git commit -F - <<-'MSG'\nx\n\tMSG\nwhile true; do sleep 60; done\nMSG",
+]
+
+ALLOWED_POLL_COMMANDS = [
+    "sleep 2",                      # a legitimate gap between retries
+    "sleep 5s",                     # the same gap with the unit spelled out
+    "npm run test",
+    # a one-shot settle inside an unrelated command — the shape the guard must not eat
+    "kill 12345 2>/dev/null; sleep 2; pgrep -c node",
+    # a `while` loop that is not a poll, with an unrelated short sleep after it
+    'while read -r f; do echo "$f"; done < list.txt\nsleep 2',
+    # Text ABOUT the shapes above is not a poll. The guard matches the raw command string,
+    # so describing a shape used to be as blocked as running it — the commit that added
+    # the three shapes above was denied for naming them. `git commit` stores its message and
+    # `grep` matches its pattern; neither ever runs what it is handed, so those two spans are
+    # dropped before the scan. Nothing else is.
+    "git commit -F - <<'MSG'\nfix(harness): close the shapes the guard missed\n\n- `while pgrep …` as the loop condition, which spins with no delay call\n- a header written across several lines, hiding `until … sleep 20; done`\nMSG",
+    "git commit -m 'docs: explain why while true; do sleep 60; done is banned'",
+    'git commit -m "fix(harness): deny sleep 2m and while pgrep watches"',
+    "grep -rn 'until .* sleep 20; done' scripts/hooks/",
+    'rg "while pgrep" docs/',
+    "git commit -m 'fix(harness): deny until [ -f x ]; do :; done busy-waits'",
+    "for f in a b; do :; done",     # a loop over a list is not a wait on a condition
+    # The read-drain idiom: each pass blocks in `read` and the loop ends at EOF — it consumes
+    # its input, it does not spin on a condition.
+    "while read -r _; do :; done",
+    "npm run build 2>&1 | while IFS= read -r _; do :; done",
+    "while read -r -d '' _; do true; done < <(find out -print0)",
+    "ls | while read -r _\ndo\n  :\ndone",
+    # A lone `cat` of a quoted heredoc only prints it: nothing on the line can run it.
+    "cat <<'EOF'\nuntil [ -f out/report.json ]; do :; done\nEOF",
+    "cat <<'EOF'\nwhile true; do sleep 60; done\nEOF\n",
+    # grep with nothing after it to run what it prints; a commit followed by an unrelated command
+    "grep -e. <<'EOF'\nwhile true; do sleep 60; done\nEOF",
+    "git commit -F - <<'MSG' && git log --oneline -1\nfix: deny while true; do sleep 60; done\nMSG",
+]
+
+
+@pytest.mark.parametrize("command", BLOCKED_POLL_COMMANDS)
+def test_poll_loops_are_denied(command):
+    proc = run_hook(POLL_HOOK, bash_payload(command))
+    assert denied(proc), f"not blocked: {command!r}\nstdout={proc.stdout!r}"
+
+
+@pytest.mark.parametrize("command", ALLOWED_POLL_COMMANDS)
+def test_short_sleeps_and_ordinary_commands_are_allowed(command):
+    proc = run_hook(POLL_HOOK, bash_payload(command))
+    assert not denied(proc), f"false positive: {command!r}\nstdout={proc.stdout!r}"
+
+
+def test_poll_hook_names_the_three_alternatives():
+    """The deny is only useful if it says what to do instead — otherwise the next move
+    is to retry the same loop with a different spelling."""
+    out = run_hook(POLL_HOOK, bash_payload("sleep 60")).stdout
+    assert "run_in_background" in out, out
+    assert "Monitor" in out, out
+    assert "--status" in out, out
+    # and the carrier that is exempt, so a denied commit message does not get retried by
+    # writing it to a file first
+    assert "git commit -F -" in out, out
+
+
+@pytest.mark.parametrize("command", BLOCKED_POLL_COMMANDS)
+def test_poll_hook_still_blocks_without_jq(command, no_jq_env):
+    proc = run_hook(POLL_HOOK, bash_payload(command), env=no_jq_env)
+    assert denied(proc), f"jq-less run let {command!r} through\nstderr={proc.stderr!r}"
+
+
+def test_poll_hook_without_jq_still_allows_safe_commands(no_jq_env):
+    """Same reason as block-dangerous.sh: a blanket deny would block the repair."""
+    for command in ("command -v jq", "sleep 2", "npm run test"):
+        proc = run_hook(POLL_HOOK, bash_payload(command), env=no_jq_env)
+        assert not denied(proc), f"jq-less run blocked {command!r}"
+
+
+@pytest.mark.parametrize("command, deny", [
+    # a file written through a heredoc, a quote pair on every line
+    ("cat > /tmp/x.py <<'EOF'\n" + "x = 'a' + \"b\"\n" * 6300 + "EOF", False),
+    # every span dropped, so the text before the next one ends in an ever longer run of blanks
+    ("grep -e " + "'a' " * 22000, False),
+    # a long commit message: the search for its delimiter line re-matched every prefix
+    ("git commit -F - <<'MSG'\n" + "it's \"quoted\": until [ -f x ]; do :; done\n" * 2100 + "MSG", False),
+    # more read-drains than ⑦'s capped passes drop: the rest are read as busy-waits
+    ("ls | while read -r _; do :; done; " * 2600, True),
+], ids=["file-heredoc", "dropped-spans", "commit-heredoc", "drain-loops"])
+def test_poll_hook_reads_an_88_kb_command_in_linear_time(command, deny):
+    """A hook that runs past its timeout lets the call through, and this one runs on every Bash
+    call. Re-reading the whole prefix for each quoted span made ⑥ quadratic (cubic when the
+    spans are dropped), and so did the delimiter search and, in a UTF-8 locale, the global
+    substitutions: 88 KB took from seconds to far past any hook timeout, by shape. Linear, it is
+    about a second on a loaded machine; the bound is far above that, so load does not flake it,
+    and far below what the quadratic walks need."""
+    assert len(command) > 85_000
+    proc = run_hook_bounded(POLL_HOOK, bash_payload(command), seconds=15)
+    assert denied(proc) == deny, proc.stdout
+
+
+# --- tdd-guard.sh (Claude: scripts/hooks, Codex: .codex/hooks) -------------
+# The one hook kept as two editions — Codex edits arrive as an apply_patch body, Claude's as a
+# file_path — so every shared case runs against both. Each edition takes its root from
+# `git -C <its own dir>`, so a case copies it into a throwaway repo holding only the files the
+# case lays out: the verdict cannot depend on what this repo happens to contain.
+
+HOOK_ID = lambda p: p.parts[-3]  # noqa: E731 — "scripts" (Claude) / ".codex" (Codex)
+
+
+def tdd_repo(tmp_path, hook, files=()):
+    """A git repo with a copy of `hook` at its real relative path, plus empty `files`.
+    Returns (repo, the copied hook)."""
+    repo = tmp_path / "repo"
+    rel = Path(*hook.parts[-3:])
+    (repo / rel).parent.mkdir(parents=True)
+    shutil.copy2(hook, repo / rel)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)
+    for f in files:
+        (repo / f).parent.mkdir(parents=True, exist_ok=True)
+        (repo / f).write_text("")
+    return repo, repo / rel
+
+
+def tdd_verdict(tmp_path, hook, source, files=(), cwd=None):
+    repo, copy = tdd_repo(tmp_path, hook, files)
+    return run_hook(copy, edit_payload(source), cwd=cwd or repo)
+
+
+@pytest.mark.parametrize("hook", TDD_HOOKS, ids=HOOK_ID)
+def test_tdd_guard_denies_unparsable_input(hook):
+    """Unparsable input leaves no basis to judge the edit. The old guard read it as "no path"
+    and let the edit through; it must block explicitly — with the deny JSON, not only exit 2."""
+    proc = subprocess.run(
+        [str(hook)], input="not json at all", cwd=ROOT,
+        capture_output=True, text=True, timeout=60,
+    )
+    assert denied(proc), f"{hook} failed open on garbage input\nstdout={proc.stdout!r}"
+
+
+@pytest.mark.parametrize("hook", TDD_HOOKS, ids=HOOK_ID)
+def test_tdd_guard_denies_without_jq(hook, no_jq_env):
+    """jq is the guard's only reader. One PATH change away from a guard that passes everything."""
+    proc = run_hook(hook, edit_payload("src/lib/untested.ts"), env=no_jq_env)
+    assert denied(proc), f"jq-less run let the edit through\nstderr={proc.stderr!r}"
+
+
+@pytest.mark.parametrize("hook", TDD_HOOKS, ids=HOOK_ID)
+@pytest.mark.parametrize("path", [
+    "docs/ADR.md",
+    "package.json",
+    "tailwind.config.ts",
+    "src/app/page.tsx",
+    "src/app/layout.tsx",
+    "src/types/nest.ts",
+    "types/nest.ts",            # a root-relative types/ path, as Codex sends it
+])
+def test_tdd_guard_allows_files_that_need_no_test(tmp_path, hook, path):
+    """The opposite regression: a guard that denies everything."""
+    assert not denied(tdd_verdict(tmp_path, hook, path))
+
+
+@pytest.mark.parametrize("hook", TDD_HOOKS, ids=HOOK_ID)
+@pytest.mark.parametrize("path", [
+    "lib/foo.ts",
+    "src/lib/nest/placer.ts",
+    "src/components/SheetView.tsx",
+])
+def test_tdd_guard_denies_an_untested_source(tmp_path, hook, path):
+    assert denied(tdd_verdict(tmp_path, hook, path))
+
+
+@pytest.mark.parametrize("hook", TDD_HOOKS, ids=HOOK_ID)
+@pytest.mark.parametrize("path", [
+    "src/lib/sheetSpec.ts",
+    "src/lib/partSpec.ts",
+    "src/lib/latestLayout.ts",       # "la-test-Layout"
+    "src/lib/nest/shortestEdge.ts",  # "shor-test-Edge"
+    "src/lib/aspectRatio.ts",        # "a-spec-tRatio"
+    "src/lib/inspector.ts",          # "in-spec-tor"
+])
+def test_a_name_that_merely_contains_test_or_spec_is_not_a_test(tmp_path, hook, path):
+    """The old `*test*|*spec*` exemption let the lowercase ones skip the guard (the glob is
+    case-sensitive, so `*Spec.ts` was never caught by it — pinned so it stays that way)."""
+    assert denied(tdd_verdict(tmp_path, hook, path))
+
+
+@pytest.mark.parametrize("hook", TDD_HOOKS, ids=HOOK_ID)
+@pytest.mark.parametrize("test_file, source", [
+    ("lib/foo.test.ts", "lib/foo.ts"),
+    ("lib/foo.spec.ts", "lib/foo.ts"),
+    ("lib/__tests__/foo.test.ts", "lib/foo.ts"),
+    ("lib/__tests__/foo.spec.ts", "lib/foo.ts"),
+    ("__tests__/foo.spec.tsx", "lib/foo.ts"),
+    ("src/__tests__/foo.test.ts", "src/lib/foo.ts"),
+    ("src/__tests__/foo.test.ts", "src/lib/nest/foo.ts"),
+    ("src/__tests__/foo.spec.ts", "src/lib/nest/foo.ts"),
+    ("src/app/api/sheets/route.spec.ts", "src/app/api/sheets/route.ts"),
+    ("src/app/api/sheets/route.test.tsx", "src/app/api/sheets/route.ts"),
+], ids=["colocated-test", "colocated-spec", "dunder-test", "dunder-spec", "parent-dunder-spec",
+        "src-dunder", "src-dunder-deep", "src-dunder-deep-spec", "api-spec", "api-tsx"])
+def test_tdd_guard_finds_every_test_vitest_collects(tmp_path, hook, test_file, source):
+    """vitest's default include is *.{test,spec}.* anywhere, so a spec counts wherever a test
+    does — a `.spec` in `__tests__/` was denied as missing. The central `src/__tests__/` folder
+    of the src/ layout counts at any depth. No app/api special case: that one mirrored another
+    project's vitest config, and here it would deny a route's real tests."""
+    proc = tdd_verdict(tmp_path, hook, source, files=[test_file])
+    assert not denied(proc), proc.stdout
+
+
+@pytest.mark.parametrize("hook", TDD_HOOKS, ids=HOOK_ID)
+def test_tdd_guard_resolves_a_relative_path_from_the_repo_root(tmp_path, hook):
+    """A relative path (Codex sends `lib/foo.ts`) was judged against whatever the CWD was, so an
+    existing test was missed from anywhere but the root and the edit was denied."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    proc = tdd_verdict(tmp_path, hook, "lib/foo.ts", files=["lib/foo.test.ts"], cwd=elsewhere)
+    assert not denied(proc), proc.stdout
+
+
+@pytest.mark.parametrize(
+    "name", ['lib/untested"module.ts', "lib/back\\slash.ts"], ids=["quote", "backslash"]
+)
+@pytest.mark.parametrize("hook", TDD_HOOKS, ids=HOOK_ID)
+def test_tdd_deny_stays_json_for_any_filename(tmp_path, hook, name):
+    """The basename is interpolated into the reason; unescaped, a `"` or `\\` made stdout
+    invalid JSON — a non-blocking error, i.e. the edit went through."""
+    assert denied(tdd_verdict(tmp_path, hook, name))
+
+
+def codex_patch(body):
+    command = "apply_patch <<'EOF'\n*** Begin Patch\n" + body + "*** End Patch\nEOF"
+    return {"tool_name": "apply_patch", "tool_input": {"command": command}}
+
+
+def codex_tdd_verdict(tmp_path, body, files=()):
+    repo, copy = tdd_repo(tmp_path, TDD_HOOKS[1], files)
+    return run_hook(copy, codex_patch(body), cwd=repo)
+
+
+TESTED = ["lib/reducers.ts", "lib/reducers.test.ts"]
+
+
+@pytest.mark.parametrize("source", [
+    "lib/untested.test.ts",   # a test renamed onto an implementation name
+    "lib/reducers.ts",        # a tested module renamed onto an untested name
+], ids=["test-to-impl", "tested-to-untested"])
+def test_codex_tdd_guard_checks_a_move_destination(tmp_path, source):
+    """`*** Move to:` is where a rename writes. Checking only the `Update File:` source let
+    implementation land under a name with no test."""
+    body = f"*** Update File: {source}\n*** Move to: lib/untested.ts\n@@\n-a\n+a\n"
+    assert denied(codex_tdd_verdict(tmp_path, body, files=TESTED))
+
+
+def test_codex_tdd_guard_lets_a_tested_move_through(tmp_path):
+    body = "*** Update File: lib/old.ts\n*** Move to: lib/reducers.ts\n@@\n-a\n+a\n"
+    proc = codex_tdd_verdict(tmp_path, body, files=TESTED + ["lib/old.ts", "lib/old.test.ts"])
+    assert not denied(proc), proc.stdout
+
+
+def test_codex_tdd_deny_stays_json_for_a_patched_filename(tmp_path):
+    body = '*** Add File: lib/untested"module.ts\n+export const x = 1;\n'
+    assert denied(codex_tdd_verdict(tmp_path, body))
+
+
 # --- wiring: .claude/settings.json and .codex/hooks.json ------------------
 # A correct script wired the wrong way blocks nothing either. These run the command string
 # exactly as each harness would, through a shell.
@@ -274,27 +634,36 @@ def test_every_claude_hook_command_quotes_the_project_dir():
         assert '"$CLAUDE_PROJECT_DIR/' in command, command
 
 
-def test_the_wired_claude_bash_guard_blocks():
+BASH_GUARDS = [("block-dangerous.sh", "rm -rf x"), ("block-poll-loop.sh", "sleep 60")]
+
+
+def test_the_wired_claude_bash_guards_block():
     commands = [c for m, c in _claude_hook_commands("PreToolUse") if m == "Bash"]
-    assert commands == ['bash "$CLAUDE_PROJECT_DIR/scripts/hooks/block-dangerous.sh"'], commands
-    proc = subprocess.run(
-        ["sh", "-c", commands[0]], input=json.dumps(bash_payload("rm -rf x")), cwd=ROOT,
-        capture_output=True, text=True, timeout=60,
-        env={**os.environ, "CLAUDE_PROJECT_DIR": str(ROOT)},
-    )
-    assert denied(proc), f"rc={proc.returncode} stderr={proc.stderr!r}"
+    assert commands == [f'bash "$CLAUDE_PROJECT_DIR/scripts/hooks/{s}"' for s, _ in BASH_GUARDS]
+    for command, (_, bad) in zip(commands, BASH_GUARDS):
+        proc = subprocess.run(
+            ["sh", "-c", command], input=json.dumps(bash_payload(bad)), cwd=ROOT,
+            capture_output=True, text=True, timeout=60,
+            env={**os.environ, "CLAUDE_PROJECT_DIR": str(ROOT)},
+        )
+        assert denied(proc), f"{command}: rc={proc.returncode} stderr={proc.stderr!r}"
 
 
-def test_the_wired_codex_bash_guard_blocks():
+def test_the_wired_codex_bash_guards_block():
+    """The poll guard is appended as handler 1 of the Bash group: Codex keys trust by group and
+    handler index, so block-dangerous keeps (1, 0) and its approval."""
     groups = _codex_groups("PreToolUse")
     assert groups[1]["matcher"] == "Bash", "group index 1 is the Bash guard's trust key"
-    command = groups[1]["hooks"][0]["command"]
-    assert "scripts/hooks/block-dangerous.sh" in command, command
-    proc = subprocess.run(
-        ["sh", "-c", command], input=json.dumps(bash_payload("rm -rf x")), cwd=ROOT,
-        capture_output=True, text=True, timeout=60,
-    )
-    assert denied(proc), f"rc={proc.returncode} stderr={proc.stderr!r}"
+    hooks = groups[1]["hooks"]
+    assert len(hooks) == len(BASH_GUARDS), hooks
+    assert hooks[1]["statusMessage"] == "폴링 루프 확인 중"
+    for hook, (script, bad) in zip(hooks, BASH_GUARDS):
+        assert f"scripts/hooks/{script}" in hook["command"], hook
+        proc = subprocess.run(
+            ["sh", "-c", hook["command"]], input=json.dumps(bash_payload(bad)), cwd=ROOT,
+            capture_output=True, text=True, timeout=60,
+        )
+        assert denied(proc), f"{script}: rc={proc.returncode} stderr={proc.stderr!r}"
 
 
 def test_both_stop_hooks_run_the_shared_validate_script():

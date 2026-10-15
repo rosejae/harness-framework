@@ -18,6 +18,11 @@
             "type": "command",
             "command": "bash \"$(git rev-parse --show-toplevel)/scripts/hooks/block-dangerous.sh\"",
             "statusMessage": "위험 명령어 확인 중"
+          },
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/scripts/hooks/block-poll-loop.sh\"",
+            "statusMessage": "폴링 루프 확인 중"
           }
         ]
       },
