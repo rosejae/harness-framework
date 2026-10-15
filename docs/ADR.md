@@ -1,21 +1,21 @@
 # Architecture Decision Records
 
-## 철학
-{프로젝트의 핵심 가치관 (예: MVP 속도 최우선. 외부 의존성 최소화. 작동하는 최소 구현을 선택.)}
+## Philosophy
+{the project's core values (e.g. MVP speed first. Minimize external dependencies. Choose the smallest implementation that works.)}
 
 ---
 
-### ADR-001: {결정 사항 (예: Next.js App Router 선택)}
-**결정**: {뭘 선택했는지}
-**이유**: {왜 선택했는지}
-**트레이드오프**: {뭘 포기했는지}
+### ADR-001: {decision (e.g. choose the Next.js App Router)}
+**Decision**: {what was chosen}
+**Reason**: {why it was chosen}
+**Trade-off**: {what was given up}
 
-### ADR-002: {결정 사항}
-**결정**: {뭘 선택했는지}
-**이유**: {왜 선택했는지}
-**트레이드오프**: {뭘 포기했는지}
+### ADR-002: {decision}
+**Decision**: {what was chosen}
+**Reason**: {why it was chosen}
+**Trade-off**: {what was given up}
 
-### ADR-003: {결정 사항}
-**결정**: {뭘 선택했는지}
-**이유**: {왜 선택했는지}
-**트레이드오프**: {뭘 포기했는지}
+### ADR-003: {decision}
+**Decision**: {what was chosen}
+**Reason**: {why it was chosen}
+**Trade-off**: {what was given up}

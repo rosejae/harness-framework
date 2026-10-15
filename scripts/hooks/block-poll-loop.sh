@@ -230,7 +230,7 @@ SCAN="$CMD"
 if [ -z "$CMD" ]; then
   SCAN="$INPUT"
   command -v jq >/dev/null 2>&1 || \
-    echo "block-poll-loop: jq 를 찾을 수 없어 원본 stdin 을 훑는다(그물이 조금 넓어진다)." >&2
+    echo "block-poll-loop: jq not found; scanning the raw stdin instead (the net gets a little wider)." >&2
 else
   SCAN=$(strip_quoted_heredoc "$CMD")
   SCAN=$(strip_inert_quotes "$SCAN")
@@ -262,7 +262,7 @@ if printf '%s' "$SCAN" | grep -qE "$POLLING" || printf '%s' "$FLAT" | grep -qE "
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "deny",
-    "permissionDecisionReason": "폴링 루프가 감지되어 차단되었습니다 (30초 이상 sleep — sleep 2m 처럼 단위를 붙인 것도 포함 / until…sleep / while…sleep / while pgrep 같은 프로세스 감시 루프 / do :; done 처럼 본문이 빈 대기 루프 / 줄을 나눠 쓴 루프도 같습니다). 좀비 프로세스와 컨텍스트 낭비를 만듭니다. 오래 걸리는 작업은 Bash 의 run_in_background 로 띄우세요 — 완료되면 자동으로 알림이 옵니다. 조건이 충족될 때까지 기다려야 하면 Monitor 도구를 쓰고, 하네스 진행 상황만 알고 싶으면 python3 scripts/execute.py <phase> --status 또는 /harness-status 를 쓰세요. 재시도 사이 간격이 필요한 것이라면 30초 미만 sleep 은 그대로 통과합니다. 폴링을 설명하는 글은 막지 않습니다 — grep 패턴과 git commit 메시지(-m, git commit -F - 히어독)는 통과하니, 커밋 메시지를 파일에 먼저 쓰지 말고 git commit -F - 로 바로 넘기세요."
+    "permissionDecisionReason": "A polling loop was detected and blocked (a sleep of 30s or more — including ones with a unit such as sleep 2m / until…sleep / while…sleep / a process-watch loop such as while pgrep / an empty-body wait loop such as do :; done / the same loops split across lines). Polling leaves zombie processes and wastes context. Start long-running work with Bash run_in_background — you are notified automatically when it finishes. To wait until a condition holds, use the Monitor tool; to see only the harness progress, use python3 scripts/execute.py <phase> --status or /harness-status. If you need a pause between retries, a sleep under 30s still passes. Text that describes polling is not blocked — grep patterns and git commit messages (-m, a git commit -F - heredoc) pass, so pipe a commit message straight into git commit -F - instead of writing it to a file first."
   }
 }
 JSON

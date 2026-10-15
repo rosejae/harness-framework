@@ -18,6 +18,7 @@ is one PATH away from being a no-op. Every blocking hook must still block when j
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -656,7 +657,7 @@ def test_the_wired_codex_bash_guards_block():
     assert groups[1]["matcher"] == "Bash", "group index 1 is the Bash guard's trust key"
     hooks = groups[1]["hooks"]
     assert len(hooks) == len(BASH_GUARDS), hooks
-    assert hooks[1]["statusMessage"] == "폴링 루프 확인 중"
+    assert hooks[1]["statusMessage"] == "Checking for polling loops"
     for hook, (script, bad) in zip(hooks, BASH_GUARDS):
         assert f"scripts/hooks/{script}" in hook["command"], hook
         proc = subprocess.run(
@@ -664,6 +665,24 @@ def test_the_wired_codex_bash_guards_block():
             capture_output=True, text=True, timeout=60,
         )
         assert denied(proc), f"{script}: rc={proc.returncode} stderr={proc.stderr!r}"
+
+
+HANGUL = re.compile("[\uac00-\ud7a3\u3131-\u318e]")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [*TDD_HOOKS, BLOCK_HOOK, POLL_HOOK, VALIDATE_HOOK, RULES_HOOK, CODEX_HOOKS],
+    ids=lambda p: str(p.relative_to(ROOT)),
+)
+def test_hook_files_are_english_only(path):
+    """Code, comments and agent-facing messages are English; only end-user UI text is Korean."""
+    hits = [
+        f"{n}: {line.strip()}"
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if HANGUL.search(line)
+    ]
+    assert not hits, "\n".join(hits)
 
 
 def test_both_stop_hooks_run_the_shared_validate_script():

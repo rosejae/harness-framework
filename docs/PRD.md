@@ -1,21 +1,21 @@
-# PRD: {프로젝트명}
+# PRD: {project name}
 
-## 목표
-{이 프로젝트가 해결하려는 문제를 한 줄로 요약}
+## Goal
+{one-line summary of the problem this project solves}
 
-## 사용자
-{누가 이 제품을 쓰는지}
+## Users
+{who uses this product}
 
-## 핵심 기능
-1. {기능 1}
-2. {기능 2}
-3. {기능 3}
+## Core features
+1. {feature 1}
+2. {feature 2}
+3. {feature 3}
 
-## MVP 제외 사항
-- {안 만들 것 1}
-- {안 만들 것 2}
-- {안 만들 것 3}
+## Out of scope for the MVP
+- {thing we won't build 1}
+- {thing we won't build 2}
+- {thing we won't build 3}
 
-## 디자인
-- {디자인 방향 (예: 다크모드 고정, 미니멀)}
-- {색상 (예: 무채색 + 포인트 1가지)}
+## Design
+- {design direction (e.g. dark mode only, minimal)}
+- {colors (e.g. neutrals + one accent)}

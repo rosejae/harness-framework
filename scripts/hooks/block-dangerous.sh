@@ -138,7 +138,7 @@ if [ -z "$CMD" ]; then
   SCAN=${SCAN//\\t/ }
   SCAN=${SCAN//$'\x02'/\\}
   command -v jq >/dev/null 2>&1 || \
-    echo "block-dangerous: jq 를 찾을 수 없어 원본 stdin 을 훑는다(그물이 조금 넓어진다)." >&2
+    echo "block-dangerous: jq not found; scanning the raw stdin instead (the net gets a little wider)." >&2
 elif lone_cat_heredoc "$CMD"; then
   SCAN=${CMD%%$'\n'*}
 fi
@@ -151,7 +151,7 @@ if printf '%s\n' "$SEGMENTS" | grep -qE "$DANGEROUS"; then
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "deny",
-    "permissionDecisionReason": "위험한 명령어가 감지되어 차단되었습니다 (재귀 삭제 / force push · 원격 ref 삭제(--delete, :ref, --mirror, --prune) / hard reset / DROP TABLE). 명령이 아니라 문장(커밋 메시지 등)에 리터럴이 들어가서 걸린 것이라면 표현을 바꾸고, 정말 필요한 파괴적 작업은 사람이 직접 실행하세요."
+    "permissionDecisionReason": "A dangerous command was detected and blocked (recursive delete / force push · remote ref deletion (--delete, :ref, --mirror, --prune) / hard reset / DROP TABLE). If it matched only because the literal appears in prose (a commit message, etc.) rather than as a command, reword it; a destructive operation that is really needed must be run by a human."
   }
 }
 EOF

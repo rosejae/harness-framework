@@ -1,76 +1,76 @@
-# UI 디자인 가이드
+# UI Design Guide
 
-## 디자인 원칙
-1. {원칙 1 — 예: "도구처럼 보여야 한다. 마케팅 페이지가 아니라 매일 쓰는 대시보드."}
-2. {원칙 2}
-3. {원칙 3}
+## Design principles
+1. {principle 1 — e.g. "It should look like a tool. A dashboard used every day, not a marketing page."}
+2. {principle 2}
+3. {principle 3}
 
-## AI 슬롭 안티패턴 — 하지 마라
-| 금지 사항 | 이유 |
+## AI-slop anti-patterns — don't
+| Banned | Why |
 |-----------|------|
-| backdrop-filter: blur() | glass morphism은 AI 템플릿의 가장 흔한 징후 |
-| gradient-text (배경 그라데이션 텍스트) | AI가 만든 SaaS 랜딩의 1번 특징 |
-| "Powered by AI" 배지 | 기능이 아니라 장식. 사용자에게 가치 없음 |
-| box-shadow 글로우 애니메이션 | 네온 글로우 = AI 슬롭 |
-| 보라/인디고 브랜드 색상 | "AI = 보라색" 클리셰 |
-| 모든 카드에 동일한 rounded-2xl | 균일한 둥근 모서리는 템플릿 느낌 |
-| 배경 gradient orb (blur-3xl 원형) | 모든 AI 랜딩 페이지에 있는 장식 |
+| backdrop-filter: blur() | glass morphism is the most common tell of an AI template |
+| gradient-text (text with a gradient background) | the #1 trait of an AI-built SaaS landing page |
+| "Powered by AI" badge | decoration, not a feature. No value to the user |
+| box-shadow glow animation | neon glow = AI slop |
+| purple/indigo brand colors | the "AI = purple" cliché |
+| the same rounded-2xl on every card | uniform rounded corners feel like a template |
+| background gradient orb (blur-3xl circle) | decoration found on every AI landing page |
 
-## 색상
-### 배경
-| 용도 | 값 |
+## Colors
+### Background
+| Use | Value |
 |------|------|
-| 페이지 | {예: #0a0a0a} |
-| 카드 | {예: #141414} |
+| Page | {e.g. #0a0a0a} |
+| Card | {e.g. #141414} |
 
-### 텍스트
-| 용도 | 값 |
+### Text
+| Use | Value |
 |------|------|
-| 주 텍스트 | {예: text-white} |
-| 본문 | {예: text-neutral-300} |
-| 보조 | {예: text-neutral-400} |
-| 비활성 | {예: text-neutral-500} |
+| Primary text | {e.g. text-white} |
+| Body | {e.g. text-neutral-300} |
+| Secondary | {e.g. text-neutral-400} |
+| Disabled | {e.g. text-neutral-500} |
 
-### 데이터/시맨틱 색상
-| 용도 | 값 |
+### Data/semantic colors
+| Use | Value |
 |------|------|
-| {긍정/성공} | {예: #22c55e} |
-| {부정/에러} | {예: #ef4444} |
-| {중립/기본} | {예: #525252} |
+| {positive/success} | {e.g. #22c55e} |
+| {negative/error} | {e.g. #ef4444} |
+| {neutral/default} | {e.g. #525252} |
 
-## 컴포넌트
-### 카드
+## Components
+### Card
 ```
-{예: rounded-lg bg-[#141414] border border-neutral-800 p-6}
-```
-
-### 버튼
-```
-Primary: {예: rounded-lg bg-white text-black hover:bg-neutral-200}
-Text:    {예: text-neutral-500 hover:text-neutral-300}
+{e.g. rounded-lg bg-[#141414] border border-neutral-800 p-6}
 ```
 
-### 입력 필드
+### Button
 ```
-{예: rounded-lg bg-neutral-900 border border-neutral-800 px-4 py-3}
+Primary: {e.g. rounded-lg bg-white text-black hover:bg-neutral-200}
+Text:    {e.g. text-neutral-500 hover:text-neutral-300}
 ```
 
-## 레이아웃
-- 전체 너비: {예: max-w-5xl}
-- 정렬: {예: 좌측 정렬 기본. 중앙 정렬 금지}
-- 간격: {예: gap-3~4, 섹션 간 space-y-8}
+### Input field
+```
+{e.g. rounded-lg bg-neutral-900 border border-neutral-800 px-4 py-3}
+```
 
-## 타이포그래피
-| 용도 | 스타일 |
+## Layout
+- Full width: {e.g. max-w-5xl}
+- Alignment: {e.g. left-aligned by default. No center alignment}
+- Spacing: {e.g. gap-3~4, space-y-8 between sections}
+
+## Typography
+| Use | Style |
 |------|--------|
-| 페이지 제목 | {예: text-4xl font-semibold text-white} |
-| 카드 제목 | {예: text-sm font-medium text-neutral-400} |
-| 본문 | {예: text-sm text-neutral-300 leading-relaxed} |
+| Page title | {e.g. text-4xl font-semibold text-white} |
+| Card title | {e.g. text-sm font-medium text-neutral-400} |
+| Body | {e.g. text-sm text-neutral-300 leading-relaxed} |
 
-## 애니메이션
-- {허용할 애니메이션만 나열. 예: fade-in (0.4s), slide-up (0.5s)}
-- {그 외 모든 애니메이션 금지}
+## Animation
+- {list only the animations allowed. e.g. fade-in (0.4s), slide-up (0.5s)}
+- {every other animation is banned}
 
-## 아이콘
-- {예: SVG 인라인, strokeWidth 1.5}
-- {예: 아이콘 컨테이너(둥근 배경 박스)로 감싸지 않는다}
+## Icons
+- {e.g. inline SVG, strokeWidth 1.5}
+- {e.g. do not wrap icons in an icon container (a rounded background box)}

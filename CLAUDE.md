@@ -1,40 +1,42 @@
-# 프로젝트: {프로젝트명}
+# Project: {project name}
 
-**이 파일에는 어떤 파일을 건드리든 항상 참인 내용만 둔다.** 영역별 규칙은 `.claude/rules/`에 있다 — Claude Code는 해당 영역의 파일을 읽을 때 일치하는 규칙을 스스로 로드하고, Codex에는 `.codex/hooks/rules-context.py`가 주입한다. Codex는 이 파일을 프로젝트 문서로 읽는다 — `AGENTS.md`는 이 파일의 심볼릭 링크이므로 규칙을 두 번째 사본에 중복하지 마라.
+**This file holds only what is true no matter which file you touch.** Area rules live in `.claude/rules/` — Claude Code loads the matching rule by itself when it reads a file in that area, and Codex gets it from `.codex/hooks/rules-context.py`. Codex reads this file as its project doc — `AGENTS.md` is a symbolic link to it, so do not duplicate rules into a second copy.
 
-## 기술 스택
-- {프레임워크 (예: Next.js 15)}
-- {언어 (예: TypeScript strict mode)}
-- {스타일링 (예: Tailwind CSS)}
+**Language**: write English everywhere — code, comments, docs, skills, hook messages, commit messages and step files. The only exception is end-user-facing product UI copy (buttons, in-app error messages), which stays Korean.
 
-## 아키텍처 규칙
-- CRITICAL: {절대 지켜야 할 규칙 1 (예: 모든 API 로직은 app/api/ 라우트 핸들러에서만 처리)}
-- CRITICAL: {절대 지켜야 할 규칙 2 (예: 클라이언트 컴포넌트에서 직접 외부 API를 호출하지 말 것)}
-- {일반 규칙 (예: 컴포넌트는 components/ 폴더에, 타입은 types/ 폴더에 분리)}
+## Tech stack
+- {framework (e.g. Next.js 15)}
+- {language (e.g. TypeScript strict mode)}
+- {styling (e.g. Tailwind CSS)}
 
-## 개발 프로세스
-- CRITICAL: 새 기능 구현 시 반드시 테스트를 먼저 작성하고, 테스트가 통과하는 구현을 작성할 것 (TDD)
-- 커밋 메시지는 conventional commits 형식을 따를 것 (feat:, fix:, docs:, refactor:)
+## Architecture rules
+- CRITICAL: {rule 1 that must never be broken (e.g. all API logic is handled only in app/api/ route handlers)}
+- CRITICAL: {rule 2 that must never be broken (e.g. client components must not call external APIs directly)}
+- {general rule (e.g. components go in components/, types are split out into types/)}
 
-## 명령어
-npm run dev      # 개발 서버
-npm run build    # 프로덕션 빌드
+## Development process
+- CRITICAL: when implementing a new feature, always write the tests first, then write the implementation that makes them pass (TDD)
+- Commit messages follow the conventional commits format (feat:, fix:, docs:, refactor:)
+
+## Commands
+npm run dev      # dev server
+npm run build    # production build
 npm run lint     # ESLint
-npm run test     # 테스트
+npm run test     # tests
 
-## 영역 규칙 (`.claude/rules/`)
+## Area rules (`.claude/rules/`)
 
-Claude Code는 해당 영역의 파일을 읽을 때 일치하는 규칙을 스스로 로드한다. Codex에는 `.codex/hooks/rules-context.py`가 주입한다 — 에이전트당 1회이며, compaction 후에는 다시 보내지 않는다.
+Claude Code loads the matching rule by itself when it reads a file in that area. Codex gets it from `.codex/hooks/rules-context.py` — once per agent, and not re-sent after compaction.
 
-| 건드리는 곳 | 규칙 |
+| What you touch | Rule |
 |---|---|
-| {영역 (예: `app/`, `components/`)} | {`.claude/rules/<name>.md` — 한 줄 요약} |
+| {area (e.g. `app/`, `components/`)} | {`.claude/rules/<name>.md` — one-line summary} |
 
-## 기준 문서
+## Canonical documents
 
-아래 문서는 프롬프트에 들어 있지 않다. 변경이 닿는 문서를 작성 전에 직접 열어라.
+Nothing below is in your prompt. Open the ones your change touches before you write.
 
-- [`docs/PRD.md`](./docs/PRD.md) — 목표, 사용자, 핵심 기능, MVP 제외 사항.
-- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — 디렉토리 구조, 패턴, 데이터 흐름, 상태 관리.
-- [`docs/ADR.md`](./docs/ADR.md) — 기술 결정과 그 이유·트레이드오프.
-- [`docs/UI_GUIDE.md`](./docs/UI_GUIDE.md) — UI 디자인 원칙, AI 슬롭 안티패턴, 색상.
+- [`docs/PRD.md`](./docs/PRD.md) — goal, users, core features, what the MVP leaves out.
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — directory structure, patterns, data flow, state management.
+- [`docs/ADR.md`](./docs/ADR.md) — technical decisions, their reasons and trade-offs.
+- [`docs/UI_GUIDE.md`](./docs/UI_GUIDE.md) — UI design principles, AI-slop anti-patterns, colors.
